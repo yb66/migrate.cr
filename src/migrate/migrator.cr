@@ -6,14 +6,21 @@ require "./migration"
 
 module Migrate
   class Migrator
-    MIGRATION_FILE_REGEX = /(?<version>\d+)(_(?<name>\w+))?\.sql/
+    MIGRATION_FILE_REGEX = /
+      (?<version>\d+)       # e.g. 1 or 19 etc
+      (?: \_                # separator
+        (?<name>\w[\w+\-])  # e.g. first_one or first-one
+      )?                    # It's optional
+      \.sql                 # Extension
+    /x
 
     def initialize(
       @db : DB::Database,
-      @dir : String = File.join("db", "migrations"),
-      @table : String = "version",
+      dir : String = "db/migrations",
+      @table : String = "migrate_versions",
       @column : String = "version"
     )
+      @dir = Path.new(dir).expand
       ensure_version_table_exist
     end
 
@@ -128,7 +135,9 @@ module Migrate
 
       applied_files.reverse! if direction == Direction::Down
 
-      migrations = applied_files.map { |path| Migration.new(File.join(@dir, path)) }
+      migrations = applied_files.map { |path|
+        Migration.new(File.join(@dir, path))
+      }
 
       migrations.each do |migration|
         if error = migration.error
@@ -195,11 +204,11 @@ module Migrate
 
     # Return sorted array of migration file names.
     protected def migrations
-      Dir.entries(@dir).select do |filename|
+      Dir.new(@dir).entries.select { |filename|
         MIGRATION_FILE_REGEX.match(filename)
-      end.sort_by do |filename|
+      }.sort_by {|filename|
         MIGRATION_FILE_REGEX.match(filename).not_nil!["version"].to_i64
-      end
+      }
     end
 
     private CREATE_VERSION_TABLE_SQL = <<-SQL
