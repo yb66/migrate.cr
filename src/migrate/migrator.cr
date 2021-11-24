@@ -146,19 +146,83 @@ module Migrate
       @dir = dir_path
       @migrations = {} of String => Migration
 
-      # Get migrations in order
-      _dir.children.map {|child|
-        path = Path.new(child)
-        Migration.new(path)
-      }.sort_by {|migration|
-        migration.version.not_nil! # Migration raises if no ver
-      }.each do |migration|
-        @migrations[migration.version.not_nil!] = migration
+      @db.scalar(query).as(Int32 | Int64)
+    end
+
+    # Return the next version as defined in migrations dir.
+    def next_version
+      current_index = all_versions.index(current_version) || raise("Current version #{current_version} is not found in migrations directory!")
+
+      if current_index == all_versions.size - 1
+        return nil # Means the current version is the last
+      else
+        return all_versions[current_index + 1]
+      end
+    end
+
+    # Return previous version as defined in migrations dir.
+    def previous_version
+      current_index = all_versions.index(current_version) || raise("Current version #{current_version} is not found in migrations directory!")
+
+      if current_index == 0
+        return nil # Means the current version is the first
+      else
+        return all_versions[current_index - 1]
+      end
+    end
+
+    # Return if current version is the latest one.
+    def latest?
+      next_version.nil?
+    end
+
+    # Apply all the migrations from current version to the last one.
+    def to_latest
+      to(all_versions.last)
+    end
+
+    # Migrate one step up.
+    def up
+      _next = next_version
+      to(_next) if _next
+    end
+
+    # Migrate one step down.
+    def down
+      previous = previous_version
+      to(previous) if previous
+    end
+
+    # Revert all migrations.
+    def reset
+      to(0)
+    end
+
+    # Revert all migrations and then migrate to current version.
+    def redo
+      current = current_version
+      reset
+      to(current)
+    end
+
+    # Migrate to specific version.
+    # TODO split into a "down" and an "up" via a macro
+    def to(target_version : Int32 | Int64)
+      started_at = Time.utc
+      current = current_version
+
+      if target_version == current
+        Log.info { "Already at version #{current}; aborting" }
+        return nil
       end
 
-      raise("There is no version #{target_version} in migrations dir!") unless all_versions.includes?(target_version)
+      unless all_versions.includes?(target_version)
+        raise("There is no version #{target_version} in migrations dir!")
+      end
 
-      direction = target_version > current ? Direction::Up : Direction::Down
+      direction = target_version > current ?
+                    Direction::Up :
+                    Direction::Down
 
       applied_versions = all_versions.to_a.select do |version|
         case direction
@@ -170,23 +234,31 @@ module Migrate
       end
 
       case direction
-      when Direction::Up
-        Log.info { "Migrating up to version #{applied_versions.dup.unshift(current.to_i64).map(&.to_s).join(" → ")}" }
-      when Direction::Down
-        # Add previous version to the list of applied versions,
-        # turning "10 → 2" into "10 → 2 → 1"
-        versions = applied_versions.dup.tap do |v|
-          index = all_versions.index(v[0])
-          if index && index > 0
-            v.unshift(all_versions[index - 1])
+        when Direction::Up
+          version_number = applied_versions.dup
+                                          .unshift(current.to_i64)
+                                          .map(&.to_s)
+                                          .join(" → ")
+          Log.info { "Migrating up to version #{version_number}" }
+        when Direction::Down
+          # Add previous version to the list of applied versions,
+          # turning "10 → 2" into "10 → 2 → 1"
+          versions = applied_versions.dup.tap do |v|
+            index = all_versions.index(v[0])
+            if index && index > 0
+              v.unshift(all_versions[index - 1])
+            end
           end
-        end
-
-        Log.info { "Migrating down to version #{versions.reverse.map(&.to_s).join(" → ")}" }
+          down_to = versions.reverse.map(&.to_s).join(" → ")
+          Log.info { "Migrating down to version #{down_to}" }
       end
 
       applied_files = migrations.select do |filename|
-        applied_versions.includes?(MIGRATION_FILE_REGEX.match(filename).not_nil!["version"].to_i64)
+        applied_versions.includes?(
+          MIGRATION_FILE_REGEX.match(filename)
+                              .not_nil!["version"]
+                              .to_i64
+        )
       end
 
       applied_files.reverse! if direction == Direction::Down
@@ -263,7 +335,9 @@ module Migrate
       Dir.new(@dir).entries.select { |filename|
         MIGRATION_FILE_REGEX.match(filename)
       }.sort_by {|filename|
-        MIGRATION_FILE_REGEX.match(filename).not_nil!["version"].to_i64
+        MIGRATION_FILE_REGEX.match(filename)
+                            .not_nil!["version"]
+                            .to_i64
       }
     end
 
