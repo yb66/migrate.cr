@@ -14,6 +14,9 @@ module Migrate
       \.sql                 # Extension
     /x
 
+    getter all_versions : Array(Int64)
+    getter dir : Path
+
     def initialize(
       @db : DB::Database,
       dir : String = "db/migrations",
@@ -21,6 +24,14 @@ module Migrate
       @column : String = "version"
     )
       @dir = Path.new(dir).expand
+
+      # Return a sorted array of versions extracted from filenames in migrations dir. Contains 0 version which means no migrations.
+      @all_versions = migrations.map { |filename|
+        MIGRATION_FILE_REGEX.match(filename)
+                            .not_nil!["version"]
+                            .to_i64
+      }.unshift(0i64)
+
       ensure_version_table_exist
     end
 
@@ -30,7 +41,6 @@ module Migrate
         column: @column,
         table:  @table,
       }
-
       @db.scalar(query).as(Int32 | Int64)
     end
 
@@ -208,12 +218,6 @@ module Migrate
       }
     end
 
-    # Return a sorted array of versions extracted from filenames in migrations dir. Contains 0 version which means no migrations.
-    protected def all_versions
-      migrations.map do |filename|
-        MIGRATION_FILE_REGEX.match(filename).not_nil!["version"].to_i64
-      end.unshift(0i64)
-    end
 
     # Return sorted array of migration file names.
     protected def migrations
