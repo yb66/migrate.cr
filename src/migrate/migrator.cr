@@ -70,37 +70,9 @@ module Migrate
       \.sql                 # Extension
     /x
 
-    # The directory migrations were loaded from (nil if using array initialization)
-    getter dir : Path | Nil
+    getter all_versions : Array(Int64)
+    getter dir : Path
 
-    # Hash of migrations keyed by version string, sorted by version
-    getter migrations : Hash(String,Migration)
-    getter adapter : Adapters::Base
-
-    # Instance variables for modules
-    @_verbose_config : VerboseLogging::VerboseConfig?
-
-    # Return all migration versions sorted
-    def all_versions : Array(String)
-      @migrations.keys.sort
-    end
-
-    # Creates a Migrator with an array of Migration objects.
-    #
-    # Useful for testing or when migrations are generated programmatically.
-    #
-    # Example:
-    # ```crystal
-    # migration = Migrate::Migration.new("-- +migrate up\nCREATE TABLE foo (id INT);")
-    # migration.version = "1"
-    #
-    # migrator = Migrate::Migrator.new(db, [migration])
-    # ```
-    #
-    # @param db [DB::Database] The database connection
-    # @param migrations [Array(Migration)] Array of migration objects
-    # @param table [String] Name of the version tracking table (default: "migrate_versions")
-    # @param column [String] Name of the version column (default: "version")
     def initialize(
       @db : DB::Database,
       dir : String = "db/migrations",
@@ -108,44 +80,23 @@ module Migrate
       @column : String = "version"
     )
       @dir = Path.new(dir).expand
+
+      # Return a sorted array of versions extracted from filenames in migrations dir. Contains 0 version which means no migrations.
+      @all_versions = migrations.map { |filename|
+        MIGRATION_FILE_REGEX.match(filename)
+                            .not_nil!["version"]
+                            .to_i64
+      }.unshift(0i64)
+
       ensure_version_table_exist
     end
 
-    # Creates a Migrator that loads migrations from a directory.
-    #
-    # Scans the directory for .sql files matching the VERSION[_NAME].sql pattern,
-    # loads and parses them, and creates the version tracking table if needed.
-    #
-    # Example:
-    # ```crystal
-    # migrator = Migrate::Migrator.new(
-    #   db,
-    #   "db/migrations",
-    #   table: "schema_versions",
-    #   column: "ver"
-    # )
-    # ```
-    #
-    # @param db [DB::Database] The database connection
-    # @param dir [String | Path] Directory containing migration files (default: "db/migrations")
-    # @param table [String] Name of the version tracking table (default: "migrate_versions")
-    # @param column [String] Name of the version column (default: "version")
-    # @raise [Exception] If directory does not exist
-    def initialize(
-      @db : DB::Database,
-      dir : String | Path = "db/migrations",
-      @table : String = "migrate_versions",
-      @column : String = "version",
-      adapter : Adapters::Base? = nil
-    )
-      @adapter = adapter || Adapters::Factory.create(@db)
-      dir_path = Path.new(dir).expand # does this raise?
-      raise "Migrations dir does not exist" if dir_path.nil?
-      raise "Migrations dir does not exist" unless Dir.exists? dir_path
-      _dir = Dir.new(dir_path)
-      @dir = dir_path
-      @migrations = {} of String => Migration
-
+    # Return actual DB version.
+    def current_version
+      query = "SELECT %{column} FROM %{table}" % {
+        column: @column,
+        table:  @table,
+      }
       @db.scalar(query).as(Int32 | Int64)
     end
 
@@ -323,12 +274,6 @@ module Migrate
       }
     end
 
-    # Return a sorted array of versions extracted from filenames in migrations dir. Contains 0 version which means no migrations.
-    protected def all_versions
-      migrations.map do |filename|
-        MIGRATION_FILE_REGEX.match(filename).not_nil!["version"].to_i64
-      end.unshift(0i64)
-    end
 
     # Return sorted array of migration file names.
     protected def migrations
