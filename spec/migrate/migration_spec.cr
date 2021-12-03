@@ -1,6 +1,6 @@
 require "../spec_helper"
 
-describe Migrate::Migration do
+describe Migrate::Migration, tags: "pg" do
   migration_sql = <<-SQL
   -- +migrate up
   CREATE TABLE foo (
