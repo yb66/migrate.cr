@@ -9,7 +9,7 @@ require "../spec_helper"
 {% end %}
 # %} #
 
-describe Migrate::Migrator, tags: "pg" do
+describe Migrate::Migration, tags: "pg" do
   drop_db
 
   migrator = Migrate::Migrator.new(

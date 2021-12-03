@@ -2,7 +2,6 @@ require "../spec_helper"
 #require "sqlite3"
 
 describe Migrate::Migration, tags: "sqlite3" do
-  #db = DB.open("sqlite3:%3Amemory%3A")
   migration_sql1 = <<-SQL
   -- Comments that will be skipped
   -- and ignored
@@ -73,7 +72,7 @@ SQL
   migration1 = Migrate::Migration.new(migration_sql1)
   migration2 = Migrate::Migration.new(migration_sql2)
 
-  describe "#queries_up" do
+  context "Just the migrations" do
     q0 = "Maybe I don't like this."
 
     q1 = <<-SQL
@@ -149,5 +148,9 @@ SQL
               .map{|statement| statement.text }
               .should eq qs2
     end
+  end
+
+  context "When applied" do
+    #db = DB.open("sqlite3:%3Amemory%3A")
   end
 end
