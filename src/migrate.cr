@@ -6,4 +6,8 @@ module Migrate
     Up
     Down
   end
+
+  # For tagging so consumers know where errors originate from.
+  class Error < Exception
+  end
 end

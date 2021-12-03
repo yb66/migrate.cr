@@ -1,7 +1,5 @@
 require "../spec_helper"
 
-db = DB.open(ENV["DATABASE_URL"])
-
 {% for table in %w(foo bar baz) %}
   def {{table.id}}_exists?(db)
     db.scalar("SELECT COUNT(*) FROM {{table.id}}").as(Int64)
@@ -9,15 +7,16 @@ db = DB.open(ENV["DATABASE_URL"])
     false
   end
 {% end %}
+# %}
 
-describe "Migrate::Migrator with errors" do
+describe "Migrate::Migrator with errors", tags: "pg" do
   describe "direction-specific errors" do
     it do
       drop_db
 
       migrator = Migrate::Migrator.new(
         db,
-        File.join("spec", "migrations_with_errors")
+        Path["spec/fixtures", "migrations_with_errors"]
       )
       migrator.up
 
@@ -35,7 +34,7 @@ describe "Migrate::Migrator with errors" do
 
       migrator = Migrate::Migrator.new(
         db,
-        File.join("spec", "migrations_with_errors")
+        Path["spec/fixtures", "migrations_with_errors"]
       )
 
       migrator.up
