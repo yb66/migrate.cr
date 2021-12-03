@@ -1,5 +1,5 @@
 require "../spec_helper"
-#require "sqlite3"
+require "sqlite3"
 
 describe Migrate::Migration, tags: "sqlite3" do
   migration_sql1 = <<-SQL
@@ -10,7 +10,7 @@ describe Migrate::Migration, tags: "sqlite3" do
 
   -- This never gets run
   -- +migrate up
-  CREATE TABLE BAR (
+  CREATE TABLE bar (
     id      integer PRIMARY KEY,
     content TEXT NOT NULL
   );
@@ -21,7 +21,7 @@ migration_sql2 = <<-SQL
   -- and ignored
 
   -- +migrate up
-  CREATE TABLE FOO (
+  CREATE TABLE foo (
     id      integer PRIMARY KEY,
     content TEXT NOT NULL
   );
@@ -55,7 +55,7 @@ migration_sql2 = <<-SQL
   -- +migrate end
 
   -- +migrate error I really don't like this table.
-  CREATE TABLE BAR (
+  CREATE TABLE bar (
     id      integer PRIMARY KEY,
     content TEXT NOT NULL
   );
@@ -76,7 +76,7 @@ SQL
     q0 = "Maybe I don't like this."
 
     q1 = <<-SQL
-    CREATE TABLE FOO (
+    CREATE TABLE foo (
       id      integer PRIMARY KEY,
       content TEXT NOT NULL
     );
@@ -116,7 +116,7 @@ SQL
     qe2 = "I really don't like this table."
 
     q8 = <<-SQL
-    CREATE TABLE BAR (
+    CREATE TABLE bar (
       id      integer PRIMARY KEY,
       content TEXT NOT NULL
     );
@@ -151,6 +151,78 @@ SQL
   end
 
   context "When applied" do
-    #db = DB.open("sqlite3:%3Amemory%3A")
+    context "Going up" do
+      it "should have the correct stuff" do
+        db = DB.open("sqlite3:%3Amemory%3A")
+        [migration_sql1, migration_sql2].map{|m|
+          Migrate::Migration.new m
+        }.each do |migration|
+          migration.statements.each_with_index do |statement, i|
+            case statement
+            when Migrate::Migration::Statement::Up
+              db.exec statement.text
+            when Migrate::Migration::Statement::Error
+              break
+            else
+              # what?
+            end
+          end
+        end
+        db.scalar("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='foo' COLLATE NOCASE;").as(Int64)
+          .should eq 1
+        db.scalar("SELECT count(*) FROM sqlite_master WHERE type='index' AND name='foo_content_index' COLLATE NOCASE;").as(Int64)
+          .should eq 1
+        db.scalar("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='tbl' COLLATE NOCASE;").as(Int64)
+          .should eq 1
+        db.scalar("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='fts_idx' COLLATE NOCASE;").as(Int64)
+          .should eq 1
+        db.scalar("SELECT count(*) FROM sqlite_master WHERE type='trigger' AND name='tbl_ai' COLLATE NOCASE;").as(Int64)
+          .should eq 1
+        db.scalar("SELECT count(*) FROM sqlite_master WHERE type='trigger' AND name='tbl_ad' COLLATE NOCASE;").as(Int64)
+          .should eq 1
+        db.scalar("SELECT count(*) FROM sqlite_master WHERE type='trigger' AND name='tbl_au' COLLATE NOCASE;").as(Int64)
+          .should eq 1
+        db.scalar("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='bar' COLLATE NOCASE;").as(Int64)
+          .should eq 0
+      end
+    end
+    context "Going down" do
+      it "should have the correct stuff" do
+        db = DB.open("sqlite3:%3Amemory%3A")
+        # This is here because I don't want to implement
+        # the full migration logic, so this cancels out
+        # ups that wouldn't have happened due to errors
+        # that won't happen because it's a test.
+        migration_sql3 = "-- +migrate down\ndrop table if exists bar;"
+        [migration_sql2, migration_sql3].map{|m|
+          Migrate::Migration.new m
+        }.each do |migration|
+          migration.statements.each_with_index do |statement, i|
+            case statement
+            when Migrate::Migration::Statement::Error
+              # ignore
+            else
+              db.exec statement.text
+            end
+          end
+        end
+        db.scalar("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='foo' COLLATE NOCASE;").as(Int64)
+          .should eq 0
+        db.scalar("SELECT count(*) FROM sqlite_master WHERE type='index' AND name='foo_content_index' COLLATE NOCASE;").as(Int64)
+          .should eq 0
+        db.scalar("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='tbl' COLLATE NOCASE;").as(Int64)
+          .should eq 0
+        db.scalar("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='fts_idx' COLLATE NOCASE;").as(Int64)
+          .should eq 0
+        db.scalar("SELECT count(*) FROM sqlite_master WHERE type='trigger' AND name='tbl_ai' COLLATE NOCASE;").as(Int64)
+          .should eq 0
+        db.scalar("SELECT count(*) FROM sqlite_master WHERE type='trigger' AND name='tbl_ad' COLLATE NOCASE;").as(Int64)
+          .should eq 0
+        db.scalar("SELECT count(*) FROM sqlite_master WHERE type='trigger' AND name='tbl_au' COLLATE NOCASE;").as(Int64)
+          .should eq 0
+        db.scalar("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='bar' COLLATE NOCASE;").as(Int64)
+          .should eq 0
+      end
+    end
   end
 end
