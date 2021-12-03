@@ -130,8 +130,8 @@ module Migrate
 
     getter statements : Array(Statement)
     getter path : Path | Nil
-    getter version : String | Nil
-    getter name : String | Nil
+    property version : String | Nil
+    property name : String | Nil
 
     def initialize(@text : String)
       @statements = [] of Statement
@@ -139,12 +139,14 @@ module Migrate
     end
 
 
-    def initialize(@path : Path)
-      @text = File.read(file_path)
+    def initialize(path : Path)
+      @text = File.read(path)
       md = FILE_REGEX.match(path.basename(path.extension))
+      raise "File name does not match `version_name.sql` pattern." if md.nil?
       @version = md["version"]?
       @name = md["name"]?
       @statements = [] of Statement
+      @path = path
       process!
     end
 
