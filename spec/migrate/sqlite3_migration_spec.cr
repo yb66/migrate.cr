@@ -151,23 +151,35 @@ SQL
   end
 
   context "When applied" do
+    break_on_errors = ->(db : DB::Database, migration : Migrate::Migration) {
+      migration.statements.each_with_index do |statement, i|
+        case statement
+        when Migrate::Migration::Statement::Up
+          db.exec statement.text
+        when Migrate::Migration::Statement::Error
+          break
+        else
+          # what?
+        end
+      end
+    }
     context "Going up" do
-      it "should have the correct stuff" do
-        db = DB.open("sqlite3:%3Amemory%3A")
-        [migration_sql1, migration_sql2].map{|m|
-          Migrate::Migration.new m
-        }.each do |migration|
-          migration.statements.each_with_index do |statement, i|
-            case statement
-            when Migrate::Migration::Statement::Up
-              db.exec statement.text
-            when Migrate::Migration::Statement::Error
-              break
-            else
-              # what?
-            end
+      db = DB.open("sqlite3:%3Amemory%3A")
+      [migration_sql1, migration_sql2].map{|m|
+        Migrate::Migration.new m
+      }.each do |migration|
+        migration.statements.each_with_index do |statement, i|
+          case statement
+          when Migrate::Migration::Statement::Up
+            db.exec statement.text
+          when Migrate::Migration::Statement::Error
+            break
+          else
+            # what?
           end
         end
+      end
+      it "should have the correct stuff" do
         db.scalar("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='foo' COLLATE NOCASE;").as(Int64)
           .should eq 1
         db.scalar("SELECT count(*) FROM sqlite_master WHERE type='index' AND name='foo_content_index' COLLATE NOCASE;").as(Int64)
@@ -222,6 +234,25 @@ SQL
           .should eq 0
         db.scalar("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='bar' COLLATE NOCASE;").as(Int64)
           .should eq 0
+      end
+    end
+    describe "Errors" do
+      db = DB.open("sqlite3:%3Amemory%3A")
+      it "shouldn't have done anything" do
+        m1 = Migrate::Migration.new(migration_sql1)
+        break_on_errors.call(db,m1)
+        db.scalar("SELECT count(*) FROM sqlite_master;").as(Int64)
+          .should eq 0
+      end
+      it "should not have a 'bar' table" do
+        m2 = Migrate::Migration.new(migration_sql2)
+        break_on_errors.call(db,m2)
+        names = db.query_all "SELECT name FROM sqlite_master  where type='table';", &.read(String)
+        names.should eq ["foo", "tbl", "fts_idx", "fts_idx_data", "fts_idx_idx", "fts_idx_docsize", "fts_idx_config"]
+        db.scalar("SELECT count(*) FROM sqlite_master where type='index';").as(Int64)
+          .should eq 1
+        db.scalar("SELECT count(*) FROM sqlite_master where type='trigger';").as(Int64)
+          .should eq 3
       end
     end
   end
