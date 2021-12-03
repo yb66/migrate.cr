@@ -16,58 +16,58 @@ describe Migrate::Migration, tags: "sqlite3" do
   );
 SQL
 
-migration_sql2 = <<-SQL
-  -- Comments that will be skipped
-  -- and ignored
+  migration_sql2 = <<-SQL
+    -- Comments that will be skipped
+    -- and ignored
 
-  -- +migrate up
-  CREATE TABLE foo (
-    id      integer PRIMARY KEY,
-    content TEXT NOT NULL
-  );
+    -- +migrate up
+    CREATE TABLE foo (
+      id      integer PRIMARY KEY,
+      content TEXT NOT NULL
+    );
 
-  -- Indexes
-  CREATE UNIQUE INDEX foo_content_index ON foo (content);
+    -- Indexes
+    CREATE UNIQUE INDEX foo_content_index ON foo (content);
 
-  -- From https://www.sqlite.org/fts5.html
-  CREATE TABLE tbl(a INTEGER PRIMARY KEY, b, c);
+    -- From https://www.sqlite.org/fts5.html
+    CREATE TABLE tbl(a INTEGER PRIMARY KEY, b, c);
 
-  CREATE VIRTUAL TABLE fts_idx USING fts5(b, c, content='tbl', content_rowid='a');
+    CREATE VIRTUAL TABLE fts_idx USING fts5(b, c, content='tbl', content_rowid='a');
 
-  -- Statements that might contain semicolons
-  -- +migrate start
-  CREATE TRIGGER tbl_ai AFTER INSERT ON tbl BEGIN
-    INSERT INTO fts_idx(rowid, b, c) VALUES (new.a, new.b, new.c);
-  END;
-  -- +migrate end
+    -- Statements that might contain semicolons
+    -- +migrate start
+    CREATE TRIGGER tbl_ai AFTER INSERT ON tbl BEGIN
+      INSERT INTO fts_idx(rowid, b, c) VALUES (new.a, new.b, new.c);
+    END;
+    -- +migrate end
 
-  -- +migrate start
-  CREATE TRIGGER tbl_ad AFTER DELETE ON tbl BEGIN
-    INSERT INTO fts_idx(fts_idx, rowid, b, c) VALUES('delete', old.a, old.b, old.c);
-  END;
-  -- +migrate end
+    -- +migrate start
+    CREATE TRIGGER tbl_ad AFTER DELETE ON tbl BEGIN
+      INSERT INTO fts_idx(fts_idx, rowid, b, c) VALUES('delete', old.a, old.b, old.c);
+    END;
+    -- +migrate end
 
-  -- +migrate start
-  CREATE TRIGGER tbl_au AFTER UPDATE ON tbl BEGIN
-    INSERT INTO fts_idx(fts_idx, rowid, b, c) VALUES('delete', old.a, old.b, old.c);
-    INSERT INTO fts_idx(rowid, b, c) VALUES (new.a, new.b, new.c);
-  END;
-  -- +migrate end
+    -- +migrate start
+    CREATE TRIGGER tbl_au AFTER UPDATE ON tbl BEGIN
+      INSERT INTO fts_idx(fts_idx, rowid, b, c) VALUES('delete', old.a, old.b, old.c);
+      INSERT INTO fts_idx(rowid, b, c) VALUES (new.a, new.b, new.c);
+    END;
+    -- +migrate end
 
-  -- +migrate error I really don't like this table.
-  CREATE TABLE bar (
-    id      integer PRIMARY KEY,
-    content TEXT NOT NULL
-  );
+    -- +migrate error I really don't like this table.
+    CREATE TABLE bar (
+      id      integer PRIMARY KEY,
+      content TEXT NOT NULL
+    );
 
-  -- +migrate down
-  DROP trigger tbl_au;
-  DROP trigger tbl_ad;
-  DROP trigger tbl_ai;
-  DROP TABLE fts_idx;
-  DROP TABLE tbl;
-  DROP TABLE foo;
-SQL
+    -- +migrate down
+    DROP trigger tbl_au;
+    DROP trigger tbl_ad;
+    DROP trigger tbl_ai;
+    DROP TABLE fts_idx;
+    DROP TABLE tbl;
+    DROP TABLE foo;
+  SQL
 
   migration1 = Migrate::Migration.new(migration_sql1)
   migration2 = Migrate::Migration.new(migration_sql2)
