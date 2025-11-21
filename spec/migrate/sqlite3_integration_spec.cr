@@ -264,13 +264,6 @@ describe "SQLite Integration Tests", tags: "sqlite3" do
       sql = <<-SQL
       -- +migrate up
       CREATE TABLE users_new (id INTEGER PRIMARY KEY, first_name TEXT, last_name TEXT);
-
-      -- Note: SQLite doesn't support functions in INSERT...SELECT easily,
-      -- so this is a simplified example
-      -- INSERT INTO users_new (id, first_name, last_name)
-      -- SELECT id, substr(fullname, 1, instr(fullname, ' ') - 1), substr(fullname, instr(fullname, ' ') + 1)
-      -- FROM users_old;
-
       DROP TABLE users_old;
 
       -- +migrate down

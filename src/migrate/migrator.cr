@@ -119,6 +119,8 @@ module Migrate
       }.each do |migration|
         @migrations[migration.version.not_nil!] = migration
       end
+
+      ensure_version_table_exist
     end
 
     # Creates a Migrator that loads migrations from a directory.
