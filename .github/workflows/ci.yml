@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+      - 'claude/**'  # Run CI on Claude Code branches
+  pull_request:
+    branches:
+      - master
+      - develop
+
+jobs:
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: migrate_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    strategy:
+      fail-fast: false
+      matrix:
+        crystal:
+          - 1.2.0
+          - latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Crystal
+        uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: ${{ matrix.crystal }}
+
+      - name: Cache shards
+        uses: actions/cache@v3
+        with:
+          path: |
+            lib
+            ~/.cache/crystal
+          key: ${{ runner.os }}-shards-${{ hashFiles('shard.yml', 'shard.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-shards-
+
+      - name: Install dependencies
+        run: shards install
+
+      - name: Setup PostgreSQL database
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -c 'CREATE DATABASE migrate_test;' || echo "Database already exists"
+
+      - name: Run specs
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/migrate_test
+        run: crystal spec --error-trace
+
+      - name: Check formatting
+        run: crystal tool format --check
+        if: matrix.crystal == 'latest'
+
+      - name: Build documentation
+        run: crystal docs
+        if: matrix.crystal == 'latest'
+
+  sqlite-test:
+    name: SQLite Tests
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        crystal:
+          - 1.2.0
+          - latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Crystal
+        uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: ${{ matrix.crystal }}
+
+      - name: Cache shards
+        uses: actions/cache@v3
+        with:
+          path: |
+            lib
+            ~/.cache/crystal
+          key: ${{ runner.os }}-shards-${{ hashFiles('shard.yml', 'shard.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-shards-
+
+      - name: Install dependencies
+        run: shards install
+
+      - name: Run SQLite specs
+        run: crystal spec spec/migrate/sqlite3_*_spec.cr --error-trace
