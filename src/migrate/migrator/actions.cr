@@ -69,7 +69,11 @@ module Migrate
 
     # Migrate to specific version.
     # TODO split into a "down" and an "up" via a macro
-    def to(target_version : String | Int32 | Int64)
+    def to(
+      target_version : String | Int32 | Int64,
+      skip_safety_check : Bool = false,
+      enable_checksums : Bool = false
+    )
       # Convert integer versions to strings for backward compatibility
       target_version = target_version.to_s if target_version.is_a?(Int32 | Int64)
 
@@ -98,6 +102,16 @@ module Migrate
                   else
                     Direction::Up
                   end
+
+      # Perform safety check unless skipped
+      unless skip_safety_check
+        safety_check!(target_version, direction)
+      end
+
+      # Initialize checksums table if enabled
+      if enable_checksums
+        ensure_checksums_table_exist
+      end
 
       # Select versions to apply based on direction
       applied_versions = if direction == Direction::Up
@@ -129,7 +143,12 @@ module Migrate
 
       migrations_to_apply.reverse! if direction == Direction::Down
 
+      # Track stats for verbose logging
+      migration_stats = [] of VerboseLogging::MigrationStats
+
       migrations_to_apply.each do |migration|
+        migration_start_time = Time.utc
+
         # Check for top-level errors first
         if error = migration.error
           raise error
@@ -155,25 +174,90 @@ module Migrate
           queries = migration.queries_down
         end
 
-        @db.transaction do |tx|
-          if queries.empty?
-            Log.warn { "No queries to run in migration file with version #{version}, applying anyway" }
-          else
-            queries.each do |query|
-              Log.debug { query }
-              tx.connection.exec(query)
+        # Log migration start if verbose
+        log_migration_start(migration.version.not_nil!, direction, queries.size)
+
+        success = false
+        error_occurred : Exception? = nil
+
+        begin
+          @db.transaction do |tx|
+            if queries.empty?
+              Log.warn { "No queries to run in migration file with version #{version}, applying anyway" }
+            else
+              queries.each_with_index do |query, idx|
+                Log.debug { query }
+
+                # Log statement execution if verbose
+                log_statement_execution(query, idx, queries.size)
+
+                # Execute with enhanced error handling
+                begin
+                  execute_statement_with_error_handling(
+                    query,
+                    idx,
+                    queries.size,
+                    migration.version.not_nil!,
+                    migration.name,
+                    direction,
+                    tx.connection
+                  )
+                rescue e : EnhancedErrors::MigrationExecutionError
+                  # Re-raise enhanced errors as-is
+                  raise e
+                rescue e : Exception
+                  # Wrap other exceptions
+                  raise EnhancedErrors::MigrationExecutionError.new(
+                    migration_version: migration.version.not_nil!,
+                    direction: direction,
+                    original_error: e,
+                    migration_name: migration.name,
+                    statement_index: idx,
+                    statement: query
+                  )
+                end
+              end
+            end
+
+            Log.debug { update_version_query(version) }
+            tx.connection.exec(update_version_query(version))
+
+            # Store checksum if enabled and migrating up
+            if enable_checksums && direction == Direction::Up
+              checksum = calculate_migration_checksum(migration)
+              store_checksum(migration.version.not_nil!, checksum)
             end
           end
 
-          Log.debug { update_version_query(version) }
-          tx.connection.exec(update_version_query(version))
+          success = true
+        rescue e : Exception
+          error_occurred = e
+          raise e
+        ensure
+          # Record stats for verbose logging
+          duration = Time.utc - migration_start_time
+          stats = VerboseLogging::MigrationStats.new(
+            version: migration.version.not_nil!,
+            direction: direction,
+            statement_count: queries.size,
+            duration: duration,
+            success: success,
+            error: error_occurred
+          )
+          migration_stats << stats
+          log_migration_complete(stats)
         end
       end
 
       previous = current
       current = current_version
 
-      Log.info { "Successfully migrated from version #{previous} to #{current} in #{TimeFormat.auto(Time.utc - started_at)}" }
+      total_duration = Time.utc - started_at
+      Log.info { "Successfully migrated from version #{previous} to #{current} in #{TimeFormat.auto(total_duration)}" }
+
+      # Log batch summary if verbose
+      log_batch_summary(migration_stats) if migration_stats.any?
+
       return current
     end
   end
