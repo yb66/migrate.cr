@@ -8,27 +8,17 @@ module Migrate
     class Factory
       # Auto-detect and return the appropriate adapter for the given database
       def self.create(db : DB::Database) : Base
-        # Try to detect based on the connection URI or driver name
-        uri = db.@uri || ""
+        # Detect database type from the class name
+        # This avoids requiring the driver constants to be defined
+        class_name = db.class.name
 
-        case uri
-        when /^postgres/, /^postgresql/
+        if class_name.includes?("PG") || class_name.includes?("Postgres")
           PostgreSQL.new
-        when /^sqlite/
+        elsif class_name.includes?("SQLite")
           SQLite.new
         else
-          # Fallback: try to detect from database class name
-          # This avoids requiring the driver constants to be defined
-          class_name = db.class.name
-
-          if class_name.includes?("PG") || class_name.includes?("Postgres")
-            PostgreSQL.new
-          elsif class_name.includes?("SQLite")
-            SQLite.new
-          else
-            # Default to PostgreSQL for backward compatibility
-            PostgreSQL.new
-          end
+          # Default to PostgreSQL for backward compatibility
+          PostgreSQL.new
         end
       end
 
