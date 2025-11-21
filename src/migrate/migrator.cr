@@ -6,6 +6,9 @@ require "sqlite3"
 require "./migration"
 require "./migrator/actions"
 require "./migrator/sql"
+require "./migrator/validation"
+require "./migrator/reporting"
+require "./adapters/factory"
 
 module Migrate
   # Manages database migrations by running SQL statements in transactions.
@@ -57,12 +60,20 @@ module Migrate
   class Migrator
     include Migrate::Migrator::Actions
     include Migrate::Migrator::SQL
+    include Migrate::Migrator::Validation
+    include Migrate::Migrator::Reporting
 
     # The directory migrations were loaded from (nil if using array initialization)
     getter dir : Path | Nil
 
     # Hash of migrations keyed by version string, sorted by version
     getter migrations : Hash(String,Migration)
+    getter adapter : Adapters::Base
+
+    # Return all migration versions sorted
+    def all_versions : Array(String)
+      @migrations.keys.sort
+    end
 
     # Creates a Migrator with an array of Migration objects.
     #
@@ -84,7 +95,8 @@ module Migrate
       @db : DB::Database,
       migrations : Array(Migration),
       @table : String = "migrate_versions",
-      @column : String = "version"
+      @column : String = "version",
+      @adapter : Adapters::Base = Adapters::Factory.create(@db)
     )
       @migrations = {} of String => Migration
       # Get migrations in order
@@ -120,7 +132,8 @@ module Migrate
       @db : DB::Database,
       dir : String | Path = "db/migrations",
       @table : String = "migrate_versions",
-      @column : String = "version"
+      @column : String = "version",
+      @adapter : Adapters::Base = Adapters::Factory.create(@db)
     )
       dir_path = Path.new(dir).expand # does this raise?
       raise "Migrations dir does not exist" if dir_path.nil?
