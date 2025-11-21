@@ -1,14 +1,14 @@
-require "./migrate/*"
-require "./migrate/adapters/*"
-
 module Migrate
+  # For tagging so consumers know where errors originate from.
+  class Error < Exception
+  end
+
   # :nodoc:
   enum Direction
     Up
     Down
   end
-
-  # For tagging so consumers know where errors originate from.
-  class Error < Exception
-  end
 end
+
+require "./migrate/*"
+require "./migrate/adapters/*"
