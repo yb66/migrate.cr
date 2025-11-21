@@ -21,6 +21,15 @@ module Migrate
         "SELECT #{column} FROM #{table}"
       end
 
+      # Return the SQL to check if a table exists
+      abstract def table_exists_sql(table : String) : String
+
+      # Return the SQL to create the checksums table
+      abstract def create_checksums_table_sql(table : String) : String
+
+      # Return the SQL to insert a checksum
+      abstract def insert_checksum_sql(table : String) : String
+
       # Return the database type name
       abstract def database_type : String
     end

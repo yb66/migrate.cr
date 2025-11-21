@@ -8,6 +8,11 @@ require "./migrator/actions"
 require "./migrator/sql"
 require "./migrator/validation"
 require "./migrator/reporting"
+require "./migrator/dry_run"
+require "./migrator/checksums"
+require "./migrator/safety"
+require "./migrator/verbose_logging"
+require "./migrator/enhanced_errors"
 require "./adapters/factory"
 
 module Migrate
@@ -62,6 +67,11 @@ module Migrate
     include Migrate::Migrator::SQL
     include Migrate::Migrator::Validation
     include Migrate::Migrator::Reporting
+    include Migrate::Migrator::DryRun
+    include Migrate::Migrator::Checksums
+    include Migrate::Migrator::Safety
+    include Migrate::Migrator::VerboseLogging
+    include Migrate::Migrator::EnhancedErrors
 
     # The directory migrations were loaded from (nil if using array initialization)
     getter dir : Path | Nil
@@ -69,6 +79,9 @@ module Migrate
     # Hash of migrations keyed by version string, sorted by version
     getter migrations : Hash(String,Migration)
     getter adapter : Adapters::Base
+
+    # Instance variables for modules
+    @_verbose_config : VerboseLogging::VerboseConfig?
 
     # Return all migration versions sorted
     def all_versions : Array(String)
