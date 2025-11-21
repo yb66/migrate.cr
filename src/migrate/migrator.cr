@@ -1,7 +1,6 @@
 require "log"
 require "time_format"
 require "db"
-require "sqlite3"
 
 require "./migration"
 require "./migrator/actions"

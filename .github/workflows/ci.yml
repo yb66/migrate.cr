@@ -5,6 +5,7 @@ on:
     branches:
       - master
       - develop
+      - 'claude/**'  # Run CI on Claude Code branches
   pull_request:
     branches:
       - master
