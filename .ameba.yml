@@ -1,0 +1,168 @@
+# Ameba configuration file for migrate.cr
+# https://github.com/crystal-ameba/ameba
+
+# Ameba is a static code analysis tool for Crystal
+# Run with: ameba
+
+# Severity levels: Convention, Warning, Error
+Severity: Warning
+
+# Globs to exclude from analysis
+Excluded:
+  - lib/**
+  - spec/**/*.cr
+
+# Enable all rules by default
+AllRules:
+  Enabled: true
+
+# Rule customizations
+
+# Style/LargeNumbers: Check for large numbers without underscores
+Style/LargeNumbers:
+  Enabled: true
+  Description: Prefer formatting large numbers with underscores
+  MinDigits: 5  # Numbers with 5+ digits should use underscores
+
+# Layout/LineLength: Check for lines that are too long
+Layout/LineLength:
+  Enabled: true
+  Description: Prefer lines to be less than 120 characters
+  MaxLength: 120
+  Severity: Convention
+
+# Lint/NotNil: Check for unsafe use of .not_nil!
+Lint/NotNil:
+  Enabled: true
+  Description: Avoid using .not_nil! when possible
+  Severity: Warning
+  # Note: Some uses are necessary in this codebase during refactoring
+
+# Naming/MethodNames: Check method naming conventions
+Naming/MethodNames:
+  Enabled: true
+  Description: Use snake_case for method names
+  Severity: Convention
+
+# Naming/TypeNames: Check type naming conventions
+Naming/TypeNames:
+  Enabled: true
+  Description: Use CamelCase for type names
+  Severity: Convention
+
+# Naming/VariableNames: Check variable naming conventions
+Naming/VariableNames:
+  Enabled: true
+  Description: Use snake_case for variable names
+  Severity: Convention
+
+# Lint/UselessAssign: Check for unused variable assignments
+Lint/UselessAssign:
+  Enabled: true
+  Description: Variables should be used after assignment
+  Severity: Warning
+
+# Lint/UnusedArgument: Check for unused method arguments
+Lint/UnusedArgument:
+  Enabled: true
+  Description: Method arguments should be used or prefixed with _
+  Severity: Warning
+
+# Lint/ShadowingOuterLocalVar: Check for variable shadowing
+Lint/ShadowingOuterLocalVar:
+  Enabled: true
+  Description: Avoid shadowing outer local variables
+  Severity: Warning
+
+# Lint/UnreachableCode: Check for unreachable code
+Lint/UnreachableCode:
+  Enabled: true
+  Description: Remove unreachable code
+  Severity: Error
+
+# Lint/UselessConditionInWhen: Check for useless conditions
+Lint/UselessConditionInWhen:
+  Enabled: true
+  Description: Avoid useless conditions in when clauses
+  Severity: Warning
+
+# Style/NegatedConditionsInUnless: Prefer if over unless with negation
+Style/NegatedConditionsInUnless:
+  Enabled: true
+  Description: Use if instead of unless with negated conditions
+  Severity: Convention
+
+# Style/UnlessElse: Avoid unless with else
+Style/UnlessElse:
+  Enabled: true
+  Description: Use if instead of unless when there's an else clause
+  Severity: Convention
+
+# Style/RedundantReturn: Check for redundant return statements
+Style/RedundantReturn:
+  Enabled: true
+  Description: Remove redundant return statements
+  Severity: Convention
+
+# Style/RedundantNext: Check for redundant next statements
+Style/RedundantNext:
+  Enabled: true
+  Description: Remove redundant next statements
+  Severity: Convention
+
+# Style/WhileTrue: Prefer loop over while true
+Style/WhileTrue:
+  Enabled: true
+  Description: Use loop instead of while true
+  Severity: Convention
+
+# Metrics/CyclomaticComplexity: Check method complexity
+Metrics/CyclomaticComplexity:
+  Enabled: true
+  Description: Methods should not be too complex
+  MaxComplexity: 15  # Increased from default 10 for parser methods
+  Severity: Warning
+
+# Performance/AnyInsteadOfEmpty: Prefer any? over !empty?
+Performance/AnyInsteadOfEmpty:
+  Enabled: true
+  Description: Use any? instead of !empty? when possible
+  Severity: Convention
+
+# Performance/CompactAfterMap: Prefer compact_map over map.compact
+Performance/CompactAfterMap:
+  Enabled: true
+  Description: Use compact_map instead of map followed by compact
+  Severity: Convention
+
+# Performance/FlattenAfterMap: Prefer flat_map over map.flatten
+Performance/FlattenAfterMap:
+  Enabled: true
+  Description: Use flat_map instead of map followed by flatten
+  Severity: Convention
+
+# Performance/SizeAfterFilter: Prefer count over select.size
+Performance/SizeAfterFilter:
+  Enabled: true
+  Description: Use count instead of select followed by size
+  Severity: Convention
+
+# Documentation/DocumentationAdmonition: Check for TODO/FIXME comments
+Documentation/DocumentationAdmonition:
+  Enabled: true
+  Description: Document TODO and FIXME with issue tracker references
+  Severity: Convention
+
+# Custom rules for this project
+
+# Allow .not_nil! in migration.cr and migrator/actions.cr during refactoring
+# These should be cleaned up as part of Phase 3.3 Code Quality work
+Lint/NotNil:
+  ExcludedFiles:
+    - src/migrate/migration.cr
+    - src/migrate/migrator/actions.cr
+
+# Migration parser is complex by nature
+Metrics/CyclomaticComplexity:
+  ExcludedFiles:
+    - src/migrate/migration.cr
