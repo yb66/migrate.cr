@@ -17,13 +17,11 @@ module Migrate
         when /^sqlite/
           SQLite.new
         else
-          # Fallback: try to detect from database class name
-          # This avoids requiring the driver constants to be defined
-          class_name = db.class.name
-
-          if class_name.includes?("PG") || class_name.includes?("Postgres")
+          # Fallback: try to detect from driver class name if available
+          # This is a best-effort approach
+          if defined?(PG) && db.is_a?(PG::Database)
             PostgreSQL.new
-          elsif class_name.includes?("SQLite")
+          elsif defined?(SQLite3) && db.responds_to?(:filename)
             SQLite.new
           else
             # Default to PostgreSQL for backward compatibility

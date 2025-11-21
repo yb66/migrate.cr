@@ -1,3 +1,6 @@
+require "./migrate/*"
+require "./migrate/adapters/*"
+
 module Migrate
   # For tagging so consumers know where errors originate from.
   class Error < Exception
