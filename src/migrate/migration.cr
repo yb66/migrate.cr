@@ -1,94 +1,115 @@
 require "string_scanner"
+require "./migration/parse_error"
 
 module Migrate
-  # Represents a database migration file containing SQL statements.
+  # Represents a database migration file containing SQL statements
+  # and migration directives.
   #
-  # A `Migration` parses SQL files containing special directives that indicate
-  # whether statements should be run when migrating up or down, or if the migration
-  # should raise an error.
+  # ## Supported Migration Commands
   #
-  # ## Migration File Format
+  # Migration files use special comment directives to organize SQL statements.
+  # All directives must be in SQL comments starting with `--`.
   #
-  # Migration files must follow the pattern: `VERSION[_NAME].sql`
-  # - VERSION: Numeric version (e.g., 1, 10, 20231121094530)
-  # - NAME: Optional descriptive name (e.g., create_users, add_indexes)
+  # ### Basic Directives
   #
-  # ## Supported Directives
+  # #### `+migrate up`
+  # Marks the beginning of SQL statements to run when migrating up (applying migration).
+  # All statements after this directive (until `+migrate down` or end of file) will be
+  # executed when migrating forward.
   #
-  # - `-- +migrate up`: Marks statements to run when migrating up
-  # - `-- +migrate down`: Marks statements to run when migrating down
-  # - `-- +migrate error [message]`: Raises an error, preventing migration
-  # - `-- +migrate start` / `-- +migrate end`: Wraps complex SQL (triggers, functions)
-  # - `-- +goose up/down`: Alternative brand (compatible with goose)
-  #
-  # ## Examples
-  #
-  # ### Simple migration:
+  # Example:
   # ```sql
   # -- +migrate up
   # CREATE TABLE users (
-  #   id INTEGER PRIMARY KEY,
+  #   id SERIAL PRIMARY KEY,
   #   name TEXT NOT NULL
   # );
+  # ```
   #
+  # #### `+migrate down`
+  # Marks the beginning of SQL statements to run when migrating down (reverting migration).
+  # All statements after this directive will be executed when rolling back this migration.
+  #
+  # Example:
+  # ```sql
   # -- +migrate down
   # DROP TABLE users;
   # ```
   #
-  # ### Complex SQL with triggers:
-  # ```sql
-  # -- +migrate up
-  # CREATE TABLE items (id INTEGER PRIMARY KEY);
+  # #### `+migrate error [message]`
+  # Raises an error with the given message when the migration is executed.
+  # Can be used at the top level (before up/down) to prevent the entire migration,
+  # or within a specific direction to prevent that direction.
   #
+  # Examples:
+  # ```sql
+  # -- Top-level error - prevents entire migration
+  # -- +migrate error This migration is not ready
+  #
+  # -- Direction-specific error
+  # -- +migrate up
+  # CREATE TABLE foo;
+  #
+  # -- +migrate down
+  # -- +migrate error This migration cannot be reversed
+  # ```
+  #
+  # ### Complex Statement Directives
+  #
+  # For SQL statements containing semicolons (like triggers, functions, or procedures),
+  # use the complex statement directives to prevent the parser from splitting on semicolons.
+  #
+  # #### `+migrate start` / `+migrate end`
+  # Marks the beginning and end of a complex SQL statement.
+  # All content between start and end is treated as a single statement.
+  #
+  # Example:
+  # ```sql
   # -- +migrate start
-  # CREATE TRIGGER items_audit AFTER INSERT ON items BEGIN
-  #   INSERT INTO audit_log VALUES (NEW.id, 'created');
+  # CREATE TRIGGER update_timestamp
+  # BEFORE UPDATE ON users
+  # FOR EACH ROW
+  # BEGIN
+  #   NEW.updated_at = NOW();
   # END;
   # -- +migrate end
-  #
-  # -- +migrate down
-  # DROP TRIGGER items_audit;
-  # DROP TABLE items;
   # ```
   #
-  # ### Irreversible migration:
+  # #### `+migrate StatementBegin` / `+migrate StatementEnd`
+  # Alternative syntax for complex statements (goose compatibility).
+  # Functions identically to `+migrate start` / `+migrate end`.
+  #
+  # ### Alternative Brands
+  #
+  # For compatibility with other migration tools, the following brands are supported
+  # in addition to `+migrate`:
+  # - `+goose` - Compatible with goose migration tool
+  # - `+migcrate` - (legacy typo support)
+  #
+  # Example:
   # ```sql
-  # -- +migrate up
-  # DROP TABLE old_data;  -- Cannot be undone
+  # -- +goose up
+  # CREATE TABLE foo;
   #
-  # -- +migrate down
-  # -- +migrate error Cannot recreate dropped data
+  # -- +goose down
+  # DROP TABLE foo;
   # ```
   #
-  # ## Statement Types
+  # ## File Naming Convention
   #
-  # Parsed migrations contain `Statement` objects of three types:
-  # - `Statement::Up`: SQL to run when migrating up
-  # - `Statement::Down`: SQL to run when migrating down
-  # - `Statement::Error`: Prevents migration and raises an error
+  # Migration files must follow the pattern: `{version}_{optional_name}.sql`
+  # - `version`: Integer version number (e.g., `1`, `20231201`, `001`)
+  # - `optional_name`: Optional descriptive name (alphanumeric, underscores, hyphens)
+  #
+  # Examples:
+  # - `1.sql`
+  # - `001_create_users.sql`
+  # - `20231201_add_indexes.sql`
+  # - `2_create-posts.sql`
+  #
   class Migration
-    # Abstract base class for migration statements.
-    #
-    # All migration statements (Up, Down, Error) inherit from this struct.
-    # Statements automatically normalize text by:
-    # - Stripping leading/trailing whitespace
-    # - Removing SQL comment lines (starting with --)
-    # - Removing empty lines
-    # - Preserving SQL content and structure
     abstract struct Statement
-      # The normalized SQL text for this statement
       getter text : String
-
-      # Creates a new Statement with normalized text.
-      #
-      # Text processing:
-      # 1. Strips leading and trailing whitespace
-      # 2. Splits into lines and strips each line
-      # 3. Removes SQL comment lines (-- comments)
-      # 4. Removes empty lines
-      # 5. Joins remaining lines with newlines
-      #
-      # @param text [String] The raw SQL text to normalize
       def initialize(text)
         @text =
           text.strip
@@ -98,43 +119,13 @@ module Migrate
               .join("\n")
       end
 
-      # Represents an UP migration statement (runs when migrating forward).
-      #
-      # Example:
-      # ```crystal
-      # up = Migration::Statement::Up.new("CREATE TABLE foo (id INT);")
-      # up.text # => "CREATE TABLE foo (id INT);"
-      # ```
       struct Up < Statement
       end
 
-      # Represents a DOWN migration statement (runs when migrating backward).
-      #
-      # Example:
-      # ```crystal
-      # down = Migration::Statement::Down.new("DROP TABLE foo;")
-      # down.text # => "DROP TABLE foo;"
-      # ```
       struct Down < Statement
       end
 
-      # Represents an ERROR directive that prevents migration.
-      #
-      # When encountered during migration, raises `Migrate::Error` with the message.
-      #
-      # Example:
-      # ```crystal
-      # error = Migration::Statement::Error.new("Cannot reverse this migration")
-      # error.text # => "Cannot reverse this migration"
-      #
-      # # With nil message, uses default
-      # error = Migration::Statement::Error.new(nil)
-      # error.text # => "Migration error command was given."
-      # ```
       struct Error < Statement
-        # Creates an Error statement with optional message.
-        #
-        # @param text [String | Nil] The error message, or nil for default message
         def initialize(text : String | Nil)
           text = "Migration error command was given." if text.nil?
           super(text)
@@ -142,16 +133,6 @@ module Migrate
       end
     end
 
-    # Regular expression for valid migration file names.
-    #
-    # Matches: `VERSION[_NAME].sql`
-    # - VERSION: One or more digits (e.g., 1, 10, 20231121094530)
-    # - NAME: Optional alphanumeric name with underscores/hyphens
-    #
-    # Examples:
-    # - `1.sql` → version: "1", name: nil
-    # - `10_create_users.sql` → version: "10", name: "create_users"
-    # - `20231121_add_indexes.sql` → version: "20231121", name: "add_indexes"
     FILE_REGEX = /
       (?<version>\d+)       # e.g. 1 or 19 etc
       (?: \_                # separator
@@ -160,11 +141,7 @@ module Migrate
       \.sql                 # Extension
     $/x
 
-    # Pattern for SQL comment prefix
     SQL_COMMENT = /\s*+\-{2,}+\s++/
-
-    # Pattern for migration brand directives
-    # Supports: +migrate, +migcrate (typo variant), +goose
     MIGRATION_BRAND = /\+\b(?:mi[gc]rate|goose)\b\s++/
 
     # For consuming and tagging an up/down/error command.
@@ -257,37 +234,11 @@ module Migrate
       )
     $/mix
 
-    # Array of parsed Statement objects (Up, Down, or Error)
     getter statements : Array(Statement)
-
-    # The file path this migration was loaded from (nil if created from string)
     getter path : Path | Nil
-
-    # The migration version (extracted from filename or set manually)
     property version : String | Nil
-
-    # Optional descriptive name (extracted from filename or set manually)
     property name : String | Nil
 
-    # Creates a new Migration from SQL text.
-    #
-    # Parses the SQL text and extracts all statements marked with migration directives.
-    #
-    # Example:
-    # ```crystal
-    # sql = <<-SQL
-    #   -- +migrate up
-    #   CREATE TABLE users (id INT);
-    #   -- +migrate down
-    #   DROP TABLE users;
-    # SQL
-    #
-    # migration = Migration.new(sql)
-    # migration.statements.size # => 2
-    # ```
-    #
-    # @param text [String] The SQL text containing migration directives
-    # @raise [Exception] If no up/down/error directive is found
     def initialize(@text : String)
       @statements = [] of Statement
       process!
@@ -348,48 +299,28 @@ module Migrate
       @statements[0...idx].any? { |s| s.is_a?(Statement::Up) || s.is_a?(Statement::Down) }
     end
 
-    # Creates a new Migration from a file path.
-    #
-    # Reads the file, extracts version and name from filename, and parses statements.
-    #
-    # Example:
-    # ```crystal
-    # migration = Migration.new(Path["db/migrations/1_create_users.sql"])
-    # migration.version # => "1"
-    # migration.name    # => "create_users"
-    # ```
-    #
-    # @param path [Path] Path to the migration file
-    # @raise [Exception] If filename doesn't match VERSION[_NAME].sql pattern
-    # @raise [Exception] If file cannot be read
-    # @raise [Exception] If no migration directives found in file
+
     def initialize(path : Path)
       @text = File.read(path)
+      @path = path
       md = FILE_REGEX.match(path.basename(path.extension))
-      raise "File name does not match `version_name.sql` pattern." if md.nil?
+      if md.nil?
+        raise ParseError.new(
+          "File name does not match `version_name.sql` pattern (expected: number_optional_name.sql)",
+          file_path: path.to_s
+        )
+      end
       @version = md["version"]?
       @name = md["name"]?
       @statements = [] of Statement
-      @path = path
       process!
+    rescue ex : ParseError
+      raise ex
+    rescue ex : Exception
+      raise ParseError.new("Failed to parse migration file: #{ex.message}", file_path: @path.try(&.to_s))
     end
 
-    # Internal method that parses the migration text and extracts statements.
-    #
-    # Uses StringScanner to parse migration directives and SQL statements.
-    # The parser is a state machine that:
-    # 1. Finds the first directive (up/down/error)
-    # 2. Collects statements until the next directive or end of file
-    # 3. Handles complex SQL blocks between +migrate start/end
-    #
-    # State transitions:
-    # - nil → Up/Down: Initial directive determines first state
-    # - Up/Down → Up/Down: Direction can change mid-file
-    # - Any → Error: Error directive stops processing that direction
-    #
-    # @raise [Exception] If no up/down/error directive found
-    # @raise [Exception] If complex statement block is not properly closed
-    private def process!
+    def process!
       s = StringScanner.new @text
       # `state` is whether it's currently going up or down.
       state = nil
@@ -397,7 +328,13 @@ module Migrate
       while state.nil?
         s.skip_until(/#{ERROR_STOPPER}|#{UPDOWN_STOPPER}/)
         chunk = s.scan_until(/$/m)
-        raise "No up/down/error command found" if chunk.nil?
+        if chunk.nil?
+          raise ParseError.new(
+            "No up/down/error command found. Migration files must contain at least one directive: +migrate up, +migrate down, or +migrate error",
+            file_path: @path.try(&.to_s),
+            context: "Searched entire file for migration directives"
+          )
+        end
         if md = ERROR_PATTERN.match(chunk)
           message = md.named_captures["message"]
           @statements << Migration::Statement::Error.new( message )
@@ -435,8 +372,11 @@ module Migrate
                 # When another command is found before the end
                 # of the complex statement then there
                 # is something wrong with the migration.
-                # TODO use proper Error class
-                raise "The previous command was not finished (use `+migrate end`) before a new one was stated."
+                raise ParseError.new(
+                  "Complex statement was not properly closed. The previous `+migrate start` command must be closed with `+migrate end` before starting a new command.",
+                  file_path: @path.try(&.to_s),
+                  context: complex_statement[0...[pos + 50, complex_statement.size].min]
+                )
               end
               @statements << state.new( complex_statement)
             end
