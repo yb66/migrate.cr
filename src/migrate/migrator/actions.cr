@@ -3,11 +3,8 @@ module Migrate
     module Actions
       # Return actual DB version.
       def current_version
-        query = "SELECT %{column} FROM %{table}" % {
-          column: @column,
-          table:  @table,
-        }
-        # TODO does it really need the casting?
+        query = @adapter.current_version_sql(@table, @column)
+        # Cast to String since versions are now stored as strings
         @db.scalar(query).as(String)
       end
 
@@ -72,7 +69,10 @@ module Migrate
 
     # Migrate to specific version.
     # TODO split into a "down" and an "up" via a macro
-    def to(target_version : Int32 | Int64)
+    def to(target_version : String | Int32 | Int64)
+      # Convert integer versions to strings for backward compatibility
+      target_version = target_version.to_s if target_version.is_a?(Int32 | Int64)
+
       started_at = Time.utc
       current = current_version
 
@@ -81,58 +81,56 @@ module Migrate
         return nil
       end
 
-      unless all_versions.includes?(target_version)
+      # Version "0" is special - it means no migrations applied
+      unless target_version == "0" || all_versions.includes?(target_version)
         raise("There is no version #{target_version} in migrations dir!")
       end
 
-      direction = target_version > current ?
-                    Direction::Up :
-                    Direction::Down
+      # Determine direction by comparing position in sorted versions array
+      current_idx = all_versions.index(current)
+      raise("Version #{current} not found in migrations!") unless current_idx
 
-      applied_versions = all_versions.to_a.select do |version|
-        case direction
-        when Direction::Up
-          version > current && version <= target_version
-        when Direction::Down
-          version - 1 < current && version - 1 >= target_version
-        end
-      end
+      # target_idx is nil when target_version is "0" (initial state)
+      target_idx = all_versions.index(target_version)
+
+      direction = if target_version == "0" || (target_idx && target_idx < current_idx)
+                    Direction::Down
+                  else
+                    Direction::Up
+                  end
+
+      # Select versions to apply based on direction
+      applied_versions = if direction == Direction::Up
+                           raise("Target index not found!") unless target_idx
+                           all_versions[current_idx + 1..target_idx]
+                         else
+                           # When migrating down to "0", apply all migrations from current down to first
+                           if target_version == "0"
+                             all_versions[0..current_idx]
+                           else
+                             raise("Target index not found!") unless target_idx
+                             all_versions[target_idx + 1..current_idx]
+                           end
+                         end
 
       case direction
         when Direction::Up
-          version_number = applied_versions.dup
-                                          .unshift(current.to_i64)
-                                          .map(&.to_s)
-                                          .join(" → ")
-          Log.info { "Migrating up to version #{version_number}" }
+          version_path = ([current] + applied_versions).join(" → ")
+          Log.info { "Migrating up to version #{version_path}" }
         when Direction::Down
-          # Add previous version to the list of applied versions,
-          # turning "10 → 2" into "10 → 2 → 1"
-          versions = applied_versions.dup.tap do |v|
-            index = all_versions.index(v[0])
-            if index && index > 0
-              v.unshift(all_versions[index - 1])
-            end
-          end
-          down_to = versions.reverse.map(&.to_s).join(" → ")
-          Log.info { "Migrating down to version #{down_to}" }
+          version_path = ([current] + applied_versions.reverse + [target_version]).join(" → ")
+          Log.info { "Migrating down to version #{version_path}" }
       end
 
-      applied_files = migrations.select do |filename|
-        applied_versions.includes?(
-          MIGRATION_FILE_REGEX.match(filename)
-                              .not_nil!["version"]
-                              .to_i64
-        )
-      end
+      # Get migration objects for the versions to apply
+      migrations_to_apply = applied_versions.map do |version|
+        @migrations[version]
+      end.compact
 
-      applied_files.reverse! if direction == Direction::Down
+      migrations_to_apply.reverse! if direction == Direction::Down
 
-      migrations = applied_files.map { |path|
-        Migration.new(File.join(@dir, path))
-      }
-
-      migrations.each do |migration|
+      migrations_to_apply.each do |migration|
+        # Check for top-level errors first
         if error = migration.error
           raise error
         end
@@ -143,22 +141,25 @@ module Migrate
             raise error
           end
 
-          version = next_version
+          version = migration.version.not_nil!
           queries = migration.queries_up
         when Direction::Down
           if error = migration.error_down
             raise error
           end
 
-          version = previous_version
+          # When migrating down, the target version is the one before this migration
+          current_idx = all_versions.index(migration.version.not_nil!)
+          raise("Migration version not found!") unless current_idx
+          version = current_idx > 0 ? all_versions[current_idx - 1] : "0"
           queries = migration.queries_down
         end
 
         @db.transaction do |tx|
-          if queries.not_nil!.empty?
+          if queries.empty?
             Log.warn { "No queries to run in migration file with version #{version}, applying anyway" }
           else
-            queries.not_nil!.each do |query|
+            queries.each do |query|
               Log.debug { query }
               tx.connection.exec(query)
             end

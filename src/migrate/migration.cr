@@ -293,6 +293,61 @@ module Migrate
       process!
     end
 
+    # Return array of SQL queries for migrating up
+    def queries_up : Array(String)
+      @statements
+        .select { |s| s.is_a?(Statement::Up) }
+        .map(&.text)
+    end
+
+    # Return array of SQL queries for migrating down
+    def queries_down : Array(String)
+      @statements
+        .select { |s| s.is_a?(Statement::Down) }
+        .map(&.text)
+    end
+
+    # Return first error statement if any (top-level or direction-agnostic errors)
+    # This would be an error that appears before any up/down directive
+    def error : Migrate::Error?
+      err = @statements.find { |s| s.is_a?(Statement::Error) && !is_direction_specific?(s) }
+      err ? Migrate::Error.new(err.text) : nil
+    end
+
+    # Return first error statement in the up direction
+    def error_up : Migrate::Error?
+      in_up = false
+      @statements.each do |s|
+        in_up = true if s.is_a?(Statement::Up)
+        return nil if s.is_a?(Statement::Down)
+        if in_up && s.is_a?(Statement::Error)
+          return Migrate::Error.new(s.text)
+        end
+      end
+      nil
+    end
+
+    # Return first error statement in the down direction
+    def error_down : Migrate::Error?
+      in_down = false
+      @statements.each do |s|
+        in_down = true if s.is_a?(Statement::Down)
+        if in_down && s.is_a?(Statement::Error)
+          return Migrate::Error.new(s.text)
+        end
+      end
+      nil
+    end
+
+    # Helper to determine if an error appears before any up/down directives
+    private def is_direction_specific?(statement : Statement) : Bool
+      idx = @statements.index(statement)
+      return false unless idx
+
+      # Check if there's an Up or Down statement before this error
+      @statements[0...idx].any? { |s| s.is_a?(Statement::Up) || s.is_a?(Statement::Down) }
+    end
+
     # Creates a new Migration from a file path.
     #
     # Reads the file, extracts version and name from filename, and parses statements.

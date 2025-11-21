@@ -1,4 +1,5 @@
 require "./migrate/*"
+require "./migrate/adapters/*"
 
 module Migrate
   # :nodoc:
