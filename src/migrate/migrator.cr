@@ -109,8 +109,9 @@ module Migrate
       migrations : Array(Migration),
       @table : String = "migrate_versions",
       @column : String = "version",
-      @adapter : Adapters::Base = Adapters::Factory.create(@db)
+      adapter : Adapters::Base? = nil
     )
+      @adapter = adapter || Adapters::Factory.create(@db)
       @migrations = {} of String => Migration
       # Get migrations in order
       migrations.sort_by {|migration|
@@ -146,8 +147,9 @@ module Migrate
       dir : String | Path = "db/migrations",
       @table : String = "migrate_versions",
       @column : String = "version",
-      @adapter : Adapters::Base = Adapters::Factory.create(@db)
+      adapter : Adapters::Base? = nil
     )
+      @adapter = adapter || Adapters::Factory.create(@db)
       dir_path = Path.new(dir).expand # does this raise?
       raise "Migrations dir does not exist" if dir_path.nil?
       raise "Migrations dir does not exist" unless Dir.exists? dir_path
