@@ -12,8 +12,8 @@ on:
       - develop
 
 jobs:
-  test:
-    name: Test Suite
+  postgresql-test:
+    name: PostgreSQL Tests
     runs-on: ubuntu-latest
 
     services:
@@ -65,10 +65,10 @@ jobs:
         run: |
           psql -h localhost -U postgres -c 'CREATE DATABASE migrate_test;' || echo "Database already exists"
 
-      - name: Run specs
+      - name: Run PostgreSQL specs
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/migrate_test
-        run: crystal spec --error-trace
+        run: crystal spec --error-trace --tag ~sqlite3
 
       - name: Check formatting
         run: crystal tool format --check
