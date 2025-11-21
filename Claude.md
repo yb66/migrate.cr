@@ -13,7 +13,7 @@
 - Integration with task runners (Cakefile, Sam.cr)
 
 ### Technology Stack
-- **Language**: Crystal 1.2.0
+- **Language**: Crystal 1.18.2
 - **Primary Dependencies**:
   - `crystal-db` (~> 0.10.1) - Database abstraction layer
   - `time_format` (~> 0.1.0) - Time formatting utilities
@@ -243,7 +243,7 @@ When modifying code, verify:
 ## Dependencies and Compatibility
 
 ### Crystal Version
-- Currently requires Crystal 1.2.0
+- Currently requires Crystal 1.18.2
 - Check `shard.yml` for exact version
 
 ### Database Support
