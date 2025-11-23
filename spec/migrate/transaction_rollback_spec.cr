@@ -260,7 +260,8 @@ describe "Transaction Rollback", tags: "sqlite3" do
       db.exec("CREATE TABLE test (id INTEGER PRIMARY KEY, value TEXT)")
 
       # Start transaction but don't commit
-      tx = db.begin_transaction
+      conn = db.checkout
+      tx = conn.begin_transaction
 
       tx.connection.exec("INSERT INTO test VALUES (1, 'test')")
 
@@ -270,6 +271,7 @@ describe "Transaction Rollback", tags: "sqlite3" do
 
       # Commit the transaction
       tx.commit
+      conn.release
 
       # Now it should be visible
       count = db.scalar("SELECT COUNT(*) FROM test").as(Int64)
@@ -280,11 +282,13 @@ describe "Transaction Rollback", tags: "sqlite3" do
       db = DB.open("sqlite3:%3Amemory%3A")
       db.exec("CREATE TABLE test (id INTEGER PRIMARY KEY)")
 
-      tx = db.begin_transaction
+      conn = db.checkout
+      tx = conn.begin_transaction
       tx.connection.exec("INSERT INTO test VALUES (1)")
       tx.connection.exec("INSERT INTO test VALUES (2)")
       tx.connection.exec("INSERT INTO test VALUES (3)")
       tx.rollback
+      conn.release
 
       # No rows should exist
       count = db.scalar("SELECT COUNT(*) FROM test").as(Int64)
